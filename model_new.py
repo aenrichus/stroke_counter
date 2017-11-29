@@ -5,10 +5,12 @@ import image_gen as ig
 import sqlite3
 import random
 import time
+import scipy.sparse as sparse
 from sklearn.model_selection import train_test_split
 
 start_time = time.time()
 print("Starting...")
+r_seed = int(start_time)
 
 
 # function to initialize weights with noise
@@ -34,40 +36,35 @@ def max_pool_2x2(x):
 
 
 print("Reading files...")
-# import training and testing data
+# import data
 kanji_data = pd.read_table("joyojinmeiyo.txt", encoding='utf-16')
-strat_col = kanji_data['LEX']
-training_data, testing_data = train_test_split(kanji_data, test_size=0.2, stratify=strat_col)
-training_data = training_data.reset_index(drop=True)
-testing_data = testing_data.reset_index(drop=True)
 
 filename_suffix = '.tiff'
+strat_col = kanji_data['LEX']
 
 print("Creating arrays...")
-training_WORD_array = np.zeros((len(training_data), 1024))
-training_LEX_onehot = np.zeros((len(training_data), 24))
-testing_WORD_array = np.zeros((len(testing_data), 1024))
-testing_LEX_onehot = np.zeros((len(testing_data), 24))
-
+kanji_WORD_array = np.zeros((len(kanji_data), 1024))
+kanji_LEX_onehot = np.zeros((len(kanji_data), 24))
 
 print("Loading images...")
 # creates arrays of the words
-for i in range(0, len(training_data)):
-    training_WORD_array[i] = ig.load_image('images/' + training_data['WORD'][i] + filename_suffix)
-
-for i in range(0, len(testing_data)):
-    testing_WORD_array[i] = ig.load_image('images/' + testing_data['WORD'][i] + filename_suffix)
+for i in range(0, len(kanji_data)):
+    kanji_WORD_array[i] = ig.load_image('images/' + kanji_data['WORD'][i] + filename_suffix)
 
 print("Loading labels...")
 # creates arrays of the lexicality
-lexicality = list(training_data['LEX'].unique())
-for i in range(0, len(training_data)):
-    training_LEX_onehot[i] = np.eye(len(lexicality))[lexicality.index(training_data['LEX'][i])]
+lexicality = list(kanji_data['LEX'].unique())
+for i in range(0, len(kanji_data)):
+    kanji_LEX_onehot[i] = np.eye(len(lexicality))[lexicality.index(kanji_data['LEX'][i])]
 
-lexicality = list(testing_data['LEX'].unique())
-for i in range(0, len(testing_data)):
-    testing_LEX_onehot[i] = np.eye(len(lexicality))[lexicality.index(testing_data['LEX'][i])]
-
+print("Splitting into training and testing sets...")
+# split the data into testing and training sets
+# TODO considering combining these before the split, but the shared parameters should suffice for now
+training_images, testing_images = train_test_split(kanji_WORD_array, test_size=0.2, stratify=strat_col, random_state=r_seed)
+training_labels, testing_labels = train_test_split(kanji_LEX_onehot, test_size=0.2, stratify=strat_col, random_state=r_seed)
+training_data, testing_data = train_test_split(kanji_data, test_size=0.2, stratify=strat_col, random_state=r_seed)
+training_data = training_data.reset_index(drop=True)
+testing_data = testing_data.reset_index(drop=True)
 
 # create a class for images and labels
 class cnnData(object):
@@ -77,14 +74,10 @@ class cnnData(object):
         self.images = images
         self.labels = labels
 
-
 print("Instancing classes...")
 # create instances of that class for training and testing
-trainingData = cnnData(training_data["WORD"], training_data["LEX"],
-                       training_WORD_array, training_LEX_onehot)
-testingData = cnnData(testing_data["WORD"], testing_data["LEX"],
-                      testing_WORD_array, testing_LEX_onehot)
-
+trainingData = cnnData(training_data["WORD"], training_data["LEX"], training_images, training_labels)
+testingData = cnnData(testing_data["WORD"], testing_data["LEX"], testing_images, testing_labels)
 
 # start an interactive session in TF
 sess = tf.InteractiveSession()
@@ -129,8 +122,8 @@ h_pool3 = max_pool_2x2(h_conv3)
 # DENSELY (FULLY) CONNECTED LAYER
 
 # initialize weights and biases to process the entire image
-W_fc1 = weight_variable([4 * 4 * 256, 100])  # 8x8x128 (8192) for the 128 8x8 feature maps, 500 nodes in this layer
-b_fc1 = bias_variable([100])
+W_fc1 = weight_variable([4 * 4 * 256, 500])  # 8x8x128 (8192) for the 128 8x8 feature maps, 500 nodes in this layer
+b_fc1 = bias_variable([500])
 
 # reshape the tensor into a batch of vectors
 h_pool3_flat = tf.reshape(h_pool3, [-1, 4*4*256])  # -1 ???, 8x8x128 to be flattened (8192)
@@ -145,7 +138,7 @@ h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
 # READOUT LAYER
 
 # initialize weights and biases to produce final output
-W_fc2 = weight_variable([100, 24])  # input of 500 nodes, output to binary decision
+W_fc2 = weight_variable([500, 24])  # input of 500 nodes, output to binary decision
 b_fc2 = bias_variable([24])
 
 # implement the layer

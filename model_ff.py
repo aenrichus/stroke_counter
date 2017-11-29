@@ -94,73 +94,36 @@ x = tf.placeholder("float", shape=[None, 1024])  # None = first dimension; 64*64
 y_ = tf.placeholder("float", shape=[None, 24])  # number of strokes possible in this dataset
 
 # reshape x to a 4D tensor
-x_image = tf.reshape(x, [-1, 32, 32, 1])  # 1- ???, 50x200 image, 1 color channel
+# x_image = tf.reshape(x, [-1, 32, 32, 1])  # 1- ???, 50x200 image, 1 color channel
 
 # FIRST LAYER ::: takes 1 image and results in 32 32x32 feature maps
 
 # initialize weights and biases to compute 32 features for each 8x8 patch
-W_conv1 = weight_variable([3, 3, 1, 64])  # 8x8 patch, 1 input channel, 32 output channels
-b_conv1 = bias_variable([64])  # for each of the 32 output channels
+W_h1 = weight_variable([32*32, 500])  # 8x8 patch, 1 input channel, 32 output channels
+b_h1 = bias_variable([500])  # for each of the 32 output channels
 
-# implement the layer
-h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)  # convolve with weight tensor and add bias; apply ReLU
-h_pool1 = max_pool_2x2(h_conv1)  # max pooling
-
-# SECOND LAYER ::: takes 32 feature maps and results in 64 16x16 feature maps
-
-# initialize weights and biases to compute 64 features for each 6x6 patch
-W_conv2 = weight_variable([3, 3, 64, 128])  # 6x6 patch, 32 input channels, 64 output channels
-b_conv2 = bias_variable([128])  # for each of the 64 output channels
-
-# implement the layer
-h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
-h_pool2 = max_pool_2x2(h_conv2)
-
-# THIRD LAYER ::: takes 64 feature maps and results in 128 8x8 feature maps
-
-# initialize weights and biases to compute 128 features for each 4x4 patch
-W_conv3 = weight_variable([3, 3, 128, 256])  # 4x4 patch, 64 input channels, 128 output channels
-b_conv3 = bias_variable([256])  # for each of the 128 output channels
-
-# implement the layer
-h_conv3 = tf.nn.relu(conv2d(h_pool2, W_conv3) + b_conv3)
-h_pool3 = max_pool_2x2(h_conv3)
-
-# DENSELY (FULLY) CONNECTED LAYER
-
-# initialize weights and biases to process the entire image
-W_fc1 = weight_variable([4 * 4 * 256, 100])  # 8x8x128 (8192) for the 128 8x8 feature maps, 500 nodes in this layer
-b_fc1 = bias_variable([100])
-
-# reshape the tensor into a batch of vectors
-h_pool3_flat = tf.reshape(h_pool3, [-1, 4*4*256])  # -1 ???, 8x8x128 to be flattened (8192)
-
-# implement the layer
-h_fc1 = tf.nn.relu(tf.matmul(h_pool3_flat, W_fc1) + b_fc1)  # multiply by weights and add bias; apply ReLU
-
-# dropout (reduces overfitting)
-keep_prob = tf.placeholder("float")  # probability of neuron output being kept during dropout
-h_fc1_drop = tf.nn.dropout(h_fc1, keep_prob)
+# implement the hidden layer
+h_fc1 = tf.nn.relu(tf.matmul(x, W_h1) + b_h1)  # multiply by weights and add bias; apply ReLU
 
 # READOUT LAYER
 
 # initialize weights and biases to produce final output
-W_fc2 = weight_variable([100, 24])  # input of 500 nodes, output to binary decision
-b_fc2 = bias_variable([24])
+W_h2 = weight_variable([500, 24])  # input of 500 nodes, output to binary decision
+b_h2 = bias_variable([24])
 
 # implement the layer
-y_conv = tf.nn.softmax(tf.matmul(h_fc1_drop, W_fc2) + b_fc2)  # multiply by weights and add bias; apply SoftMax
+y_ff = tf.nn.softmax(tf.matmul(h_fc1, W_h2) + b_h2)  # multiply by weights and add bias; apply SoftMax
 
 # training and evaluation
-cross_entropy = -tf.reduce_sum(y_ * tf.log(y_conv))  # cost function: cross entropy between target and prediction
+cross_entropy = -tf.reduce_sum(y_ * tf.log(y_ff))  # cost function: cross entropy between target and prediction
 train_step = tf.train.AdamOptimizer(1e-5).minimize(cross_entropy)  # 1e-5 learning rate
-correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))  # check accuracy; boolean result
+correct_prediction = tf.equal(tf.argmax(y_ff, 1), tf.argmax(y_, 1))  # check accuracy; boolean result
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))  # convert boolean to float -> take the mean
 sess.run(tf.global_variables_initializer())  # required
 
 
 # set variables
-summaries_dir = "summary/"
+summaries_dir = "summary_ff/"
 batch_size = 100
 num_trials = 1000000
 test_freq = 10000
@@ -192,13 +155,13 @@ for i in range(int(num_trials / batch_size) + 1):
                                                                                 batch_size))
     if i % int(test_freq / batch_size) == 0:  # testing frequency
         # print testing accuracy to console
-        test_accuracy = accuracy.eval(feed_dict={x: testingData.images, y_: testingData.labels, keep_prob: 1.0})
-        train_accuracy = accuracy.eval(feed_dict={x: trainingData.images, y_: trainingData.labels, keep_prob: 1.0})
+        test_accuracy = accuracy.eval(feed_dict={x: testingData.images, y_: testingData.labels})
+        train_accuracy = accuracy.eval(feed_dict={x: trainingData.images, y_: trainingData.labels})
         print("Elapsed time:", np.round(((time.time() - start_time) / 60), 2), "minutes,",
               "step %d, test acc %e, train acc %f " % (int(i * batch_size), test_accuracy, train_accuracy))
 
         # append TESTING results to database
-        test_pred = y_conv.eval(feed_dict={x: testingData.images, y_: testingData.labels, keep_prob: 1.0})
+        test_pred = y_ff.eval(feed_dict={x: testingData.images, y_: testingData.labels})
         pred = np.argmax(test_pred, axis=1) # determine prediction
 
         # connect to database and create a cursor
@@ -216,7 +179,7 @@ for i in range(int(num_trials / batch_size) + 1):
         conn.close()
 
         # append TRAINING results to database
-        train_pred = y_conv.eval(feed_dict={x: trainingData.images, y_: trainingData.labels, keep_prob: 1.0})
+        train_pred = y_ff.eval(feed_dict={x: trainingData.images, y_: trainingData.labels})
         pred = np.argmax(train_pred, axis=1)  # determine prediction
 
         # connect to database and create a cursor
@@ -234,7 +197,7 @@ for i in range(int(num_trials / batch_size) + 1):
         conn.close()
 
     # actually run training
-    train_step.run(feed_dict={x: batch_images, y_: batch_labels, keep_prob: 0.5})
+    train_step.run(feed_dict={x: batch_images, y_: batch_labels})
 
     # append ONLINE results to database
     # y_out = y_conv.eval(feed_dict={x: batch_images, y_: batch_labels, keep_prob: 1.0}) # evaluate on the testing set
@@ -252,10 +215,8 @@ for i in range(int(num_trials / batch_size) + 1):
     # conn.close()
 
 # print the results using the test set
-print("Final accuracy %g" % accuracy.eval(feed_dict={x: testingData.images, y_: testingData.labels, keep_prob: 1.0}))
+print("Final accuracy %g" % accuracy.eval(feed_dict={x: testingData.images, y_: testingData.labels}))
 
 # print the amount of time elapsed in minutes
 elapsed_time = time.time() - start_time
 print("Completed... Total time:", np.round((elapsed_time / 60), 2), "minutes.")
-
-# TODO implement growing vocabulary methods
