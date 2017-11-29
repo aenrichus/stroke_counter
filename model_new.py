@@ -5,7 +5,6 @@ import image_gen as ig
 import sqlite3
 import random
 import time
-import scipy.sparse as sparse
 from sklearn.model_selection import train_test_split
 
 start_time = time.time()
@@ -87,7 +86,7 @@ x = tf.placeholder("float", shape=[None, 1024])  # None = first dimension; 64*64
 y_ = tf.placeholder("float", shape=[None, 24])  # number of strokes possible in this dataset
 
 # reshape x to a 4D tensor
-x_image = tf.reshape(x, [-1, 32, 32, 1])  # 1- ???, 50x200 image, 1 color channel
+x_image = tf.reshape(x, [-1, 32, 32, 1])  # 32x32 image, 1 color channel
 
 # FIRST LAYER ::: takes 1 image and results in 32 32x32 feature maps
 
@@ -122,7 +121,7 @@ h_pool3 = max_pool_2x2(h_conv3)
 # DENSELY (FULLY) CONNECTED LAYER
 
 # initialize weights and biases to process the entire image
-W_fc1 = weight_variable([4 * 4 * 256, 500])  # 8x8x128 (8192) for the 128 8x8 feature maps, 500 nodes in this layer
+W_fc1 = weight_variable([4 * 4 * 256, 500])  # 4x4x128 for the 128 4x4 feature maps, 500 nodes in this layer
 b_fc1 = bias_variable([500])
 
 # reshape the tensor into a batch of vectors
@@ -155,7 +154,7 @@ sess.run(tf.global_variables_initializer())  # required
 # set variables
 summaries_dir = "summary/"
 batch_size = 100
-num_trials = 1000000
+num_trials = 5000000
 test_freq = 10000
 
 # prepare the database

@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 
 start_time = time.time()
 print("Starting...")
+r_seed = int(start_time)
 
 
 # function to initialize weights with noise
@@ -34,40 +35,35 @@ def max_pool_2x2(x):
 
 
 print("Reading files...")
-# import training and testing data
+# import data
 kanji_data = pd.read_table("joyojinmeiyo.txt", encoding='utf-16')
-strat_col = kanji_data['LEX']
-training_data, testing_data = train_test_split(kanji_data, test_size=0.2, stratify=strat_col)
-training_data = training_data.reset_index(drop=True)
-testing_data = testing_data.reset_index(drop=True)
 
 filename_suffix = '.tiff'
+strat_col = kanji_data['LEX']
 
 print("Creating arrays...")
-training_WORD_array = np.zeros((len(training_data), 1024))
-training_LEX_onehot = np.zeros((len(training_data), 24))
-testing_WORD_array = np.zeros((len(testing_data), 1024))
-testing_LEX_onehot = np.zeros((len(testing_data), 24))
-
+kanji_WORD_array = np.zeros((len(kanji_data), 1024))
+kanji_LEX_onehot = np.zeros((len(kanji_data), 24))
 
 print("Loading images...")
 # creates arrays of the words
-for i in range(0, len(training_data)):
-    training_WORD_array[i] = ig.load_image('images/' + training_data['WORD'][i] + filename_suffix)
-
-for i in range(0, len(testing_data)):
-    testing_WORD_array[i] = ig.load_image('images/' + testing_data['WORD'][i] + filename_suffix)
+for i in range(0, len(kanji_data)):
+    kanji_WORD_array[i] = ig.load_image('images/' + kanji_data['WORD'][i] + filename_suffix)
 
 print("Loading labels...")
 # creates arrays of the lexicality
-lexicality = list(training_data['LEX'].unique())
-for i in range(0, len(training_data)):
-    training_LEX_onehot[i] = np.eye(len(lexicality))[lexicality.index(training_data['LEX'][i])]
+lexicality = list(kanji_data['LEX'].unique())
+for i in range(0, len(kanji_data)):
+    kanji_LEX_onehot[i] = np.eye(len(lexicality))[lexicality.index(kanji_data['LEX'][i])]
 
-lexicality = list(testing_data['LEX'].unique())
-for i in range(0, len(testing_data)):
-    testing_LEX_onehot[i] = np.eye(len(lexicality))[lexicality.index(testing_data['LEX'][i])]
-
+print("Splitting into training and testing sets...")
+# split the data into testing and training sets
+# TODO considering combining these before the split, but the shared parameters should suffice for now
+training_images, testing_images = train_test_split(kanji_WORD_array, test_size=0.2, stratify=strat_col, random_state=r_seed)
+training_labels, testing_labels = train_test_split(kanji_LEX_onehot, test_size=0.2, stratify=strat_col, random_state=r_seed)
+training_data, testing_data = train_test_split(kanji_data, test_size=0.2, stratify=strat_col, random_state=r_seed)
+training_data = training_data.reset_index(drop=True)
+testing_data = testing_data.reset_index(drop=True)
 
 # create a class for images and labels
 class cnnData(object):
@@ -77,13 +73,10 @@ class cnnData(object):
         self.images = images
         self.labels = labels
 
-
 print("Instancing classes...")
 # create instances of that class for training and testing
-trainingData = cnnData(training_data["WORD"], training_data["LEX"],
-                       training_WORD_array, training_LEX_onehot)
-testingData = cnnData(testing_data["WORD"], testing_data["LEX"],
-                      testing_WORD_array, testing_LEX_onehot)
+trainingData = cnnData(training_data["WORD"], training_data["LEX"], training_images, training_labels)
+testingData = cnnData(testing_data["WORD"], testing_data["LEX"], testing_images, testing_labels)
 
 
 # start an interactive session in TF
@@ -125,7 +118,7 @@ sess.run(tf.global_variables_initializer())  # required
 # set variables
 summaries_dir = "summary_ff/"
 batch_size = 100
-num_trials = 1000000
+num_trials = 5000000
 test_freq = 10000
 
 # prepare the database
@@ -198,21 +191,6 @@ for i in range(int(num_trials / batch_size) + 1):
 
     # actually run training
     train_step.run(feed_dict={x: batch_images, y_: batch_labels})
-
-    # append ONLINE results to database
-    # y_out = y_conv.eval(feed_dict={x: batch_images, y_: batch_labels, keep_prob: 1.0}) # evaluate on the testing set
-    # pred = np.argmax(y_out, axis=1) # determine prediction
-    # conn = sqlite3.connect(summaries_dir + 'results.db', timeout=10)
-    # c = conn.cursor()
-    # for k in range(batch_size):
-    #     kanji = str(batch_kanji[k])  # fix this
-    #     strokes = str(batch_strokes[k])  # and this
-    #     predict = str(pred[k] + 1)
-    #
-    #     # write strain data to the database
-    #     c.execute('''INSERT INTO train VALUES (?, ?, ?, ?)''', (kanji, strokes, predict, str(i * batch_size)))
-    #     conn.commit()  # commit those changes to the database
-    # conn.close()
 
 # print the results using the test set
 print("Final accuracy %g" % accuracy.eval(feed_dict={x: testingData.images, y_: testingData.labels}))
